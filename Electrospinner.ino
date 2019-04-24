@@ -4,61 +4,79 @@
 //calculate steps per second
 //targetV / SPM = steps per second
 #include <Servo.h>
+#include <digitalWriteFast.h>
 
-#define AXISENA 3
-#define AXISSTP 4
-#define AXISDIR 5
-#define SYRINGEENA 6
+#define AXISENA 9
+#define AXISSTP 5
+#define AXISDIR 4
+#define SYRINGEENA 8
 #define SYRINGESTP 7
-#define SYRINGEDIR 8
-#define SPINNERPWM 9
+#define SYRINGEDIR 6
+
+#define SPINNERPWM 10
 
 Servo spinnerControl;
 
 long axisPosition    = 0;//steps
 long syringePosition = 0;
 
-int axisSPM    = 80;//steps per millimeter
-int syringeSPM = 50 * 32;
+int axisSPM    = 400;//steps per millimeter
+long syringeSPM = 200L * 51L * 32L;
 
-float axisTargetV = 0.0f;
-float syringeTargetV = 0.0f;
+float axisTargetV = 40.0f;
+float syringeTargetV = 0.5f;
 float spinnerTargetV = 0.0f;
 
-float axisStepInterval = 0.0f;//seconds incrementing before next step
-float syringeStepInterval = 0.0f;
+float axisIntervalCounter = 0.0f;
+float syringeIntervalCounter = 0.0f;
+
+float axisStepInterval    = 1.0f / (axisSPM * axisTargetV);
+float syringeStepInterval = 1.0f / (syringeSPM * syringeTargetV);
 
 bool axisHasStepped = false;
 bool syringeHasStepped = false;
 
 bool axisDirection = true;
 
-long previousMillis;
+float dT;
+bool calcDT = false;
+long currentTime;
 
 void setup() {
-  pinMode(AXISENA, OUTPUT);
-  pinMode(AXISSTP, OUTPUT);
-  pinMode(AXISDIR, OUTPUT);
-  pinMode(SYRINGEENA, OUTPUT);
-  pinMode(SYRINGESTP, OUTPUT);
-  pinMode(SYRINGEDIR, OUTPUT);
+  pinModeFast(AXISENA, OUTPUT);
+  pinModeFast(AXISSTP, OUTPUT);
+  pinModeFast(AXISDIR, OUTPUT);
+  pinModeFast(SYRINGEENA, OUTPUT);
+  pinModeFast(SYRINGESTP, OUTPUT);
+  pinModeFast(SYRINGEDIR, OUTPUT);
+
+  Serial.begin(115200);
 
   spinnerControl.attach(SPINNERPWM);
 
-  previousMillis = millis();
-
-  axisTargetV = 40;//mm/s
-  syringeTargetV = 0.5;//mm/s
   SetSpinnerVelocity(1000);
+
+  digitalWriteFast(AXISENA, LOW);
+  digitalWriteFast(SYRINGEENA, LOW);
+  digitalWriteFast(AXISDIR, HIGH);
 }
 
 void loop() {
-  float aP = (float)axisPosition / (float)axisSPM;
-  float sP = (float)syringePosition / (float)syringeSPM;
+  if(calcDT == false){
+    currentTime = micros();
+  }
+  
+  int aP = axisPosition / (int)axisSPM;
+  int sP = syringePosition / (int)syringeSPM;
 
   //axis is out of range, flip direction, maintain velocity
-  if (aP < 0 || aP > 200){
-    FlipAxisDirection();
+  if (aP < 0){
+    digitalWriteFast(AXISDIR, HIGH);
+    axisDirection = true;
+  }
+  else if(aP > 20){
+    digitalWriteFast(AXISDIR, LOW);
+    axisDirection = false;
   }
 
   //syringe is out of range, disable
@@ -66,69 +84,69 @@ void loop() {
     spinnerTargetV = 0.0f;
   }
   
-  Control(aP, sP);
+  Control();
+  
+  if (calcDT == false){
+    dT = ((float)(micros() - currentTime)) / 1000000.0f;
+    calcDT = true;
+  }
 }
 
-void Control(float absAxisPos, float absSyringePos){
-  long currentTime = millis();
-  float dT = (float)(currentTime - previousMillis) / 1000.0f;
-
-  float axisStepInterval = ((float)axisTargetV / (float)axisSPM) * dT;
-  float syringeStepInterval = ((float)syringeTargetV / (float)syringeSPM) * dT;
-
-  if (axisHasStepped){
-    StepAxisOff();
-  }
-  else if (axisIntervalCounter < axisStepInterval){
+void Control(){
+  if (axisIntervalCounter < axisStepInterval){
     axisIntervalCounter += dT;
   }
   else{
     axisIntervalCounter = 0;
-    StepAxisOn();
+    StepAxis();
+    
+    if(axisDirection){
+      axisPosition += 1;
+    }
+    else{
+      axisPosition -= 1;
+    }
   }
   
-  if (syringeHasStepped){
-    StepSyringeOff();
-  }
-  else if (syringeIntervalCounter < syringeStepInterval){
+  if (syringeIntervalCounter < syringeStepInterval){
     syringeIntervalCounter += dT;
   }
   else{
     syringeIntervalCounter = 0;
-    StepSyringeOn();
+    StepSyringe();
+    syringePosition += 1;
   }
-  
-  previousMillis = currentTime;
 }
 
-void FlipAxisDirection(){
-  if (axisDirection){
-    digitalWrite(AXISDIR, LOW);
-    axisDirection = false;
-  }
-  else {
-    digitalWrite(AXISDIR, HIGH);
-    axisDirection = true;
-  }
+void StepAxis(){
+  digitalWriteFast(AXISSTP, HIGH);
+  delayMicroseconds(2);
+  digitalWriteFast(AXISSTP, LOW);
+}
+
+void StepSyringe(){
+  digitalWriteFast(SYRINGESTP, HIGH);
+  delayMicroseconds(2);
+  digitalWriteFast(SYRINGESTP, LOW);
 }
 
 void StepAxisOn(){
-  digitalWrite(AXISSTP, HIGH);
+  digitalWriteFast(AXISSTP, HIGH);
   axisHasStepped = true;
 }
 
 void StepAxisOff(){
-  digitalWrite(AXISSTP, LOW);
+  digitalWriteFast(AXISSTP, LOW);
   axisHasStepped = false;
 }
 
 void StepSyringeOn(){
-  digitalWrite(SYRINGESTP, HIGH);
+  digitalWriteFast(SYRINGESTP, HIGH);
   syringeHasStepped = true;
 }
 
 void StepSyringeOff(){
-  digitalWrite(SYRINGESTP, LOW);
+  digitalWriteFast(SYRINGESTP, LOW);
   syringeHasStepped = false;
 }
 
