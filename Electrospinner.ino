@@ -13,7 +13,10 @@
 #define SYRINGESTP 7
 #define SYRINGEDIR 6
 
-#define SPINNERPWM 10
+#define CONTROLONE A0
+#define CONTROLTWO A1
+
+#define SPINNERPWM 3
 
 Servo spinnerControl;
 
@@ -24,7 +27,7 @@ int axisSPM    = 400;//steps per millimeter
 long syringeSPM = 200L * 51L * 32L;
 
 float axisTargetV = 40.0f;
-float syringeTargetV = 0.5f;
+float syringeTargetV = 0.014f;
 float spinnerTargetV = 0.0f;
 
 float axisIntervalCounter = 0.0f;
@@ -50,11 +53,19 @@ void setup() {
   pinModeFast(SYRINGESTP, OUTPUT);
   pinModeFast(SYRINGEDIR, OUTPUT);
 
+  pinModeFast(CONTROLONE, INPUT);
+  pinModeFast(CONTROLTWO, INPUT);
+
   Serial.begin(115200);
 
-  spinnerControl.attach(SPINNERPWM);
+  spinnerControl.attach(3, 1000, 2000);
+  
+  //SetSpinnerVelocity(0);
+  spinnerControl.writeMicroseconds(1000);
 
-  SetSpinnerVelocity(1000);
+  delay(5000);
+
+  spinnerControl.writeMicroseconds(1080);
 
   digitalWriteFast(AXISENA, LOW);
   digitalWriteFast(SYRINGEENA, LOW);
@@ -83,6 +94,9 @@ void loop() {
   if(sP < 0 || aP > 80){
     spinnerTargetV = 0.0f;
   }
+
+  syringeTargetV = map(analogRead(CONTROLONE), 0, 1023, 0.001f, 0.1f);
+  spinnerControl.writeMicroseconds(map(analogRead(CONTROLTWO), 0, 1023, 1060, 1250));
   
   Control();
   
